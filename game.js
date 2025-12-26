@@ -30,54 +30,69 @@ function preload() {
 
 function create() {
     const style = { fontSize: '28px', fill: '#00ffcc', fontStyle: 'bold' };
-    this.scoreText = this.add.text(20, 20, 'SCORE: 0', style).setDepth(50).setVisible(false);
-    this.timerText = this.add.text(window.innerWidth - 120, 20, '60s', style).setDepth(50).setVisible(false);
+    
+    // 1. IN-GAME HUD (Initially Hidden)
+    this.scoreText = this.add.text(20, 40, 'SCORE: 0', style).setDepth(50).setVisible(false);
+    this.timerText = this.add.text(window.innerWidth - 120, 40, '60s', style).setDepth(50).setVisible(false);
+    
+    this.pauseBtn = this.add.text(window.innerWidth / 2, 55, 'PAUSE', { 
+        fontSize: '24px', backgroundColor: '#e74c3c', padding: 10 
+    }).setOrigin(0.5).setInteractive().setDepth(50).setVisible(false);
 
-    // PAUSE BUTTON (In-Game)
-    this.pauseBtn = this.add.text(window.innerWidth / 2, 35, 'PAUSE', { fontSize: '24px', backgroundColor: '#e74c3c', padding: 8 })
-        .setOrigin(0.5).setInteractive().setDepth(50).setVisible(false)
-        .on('pointerdown', () => showPauseMenu(this));
-
+    // 2. CREATE THE GRID
     createGrid(this);
-    createMainMenu(this);
-    createPauseMenu(this);
+
+    // 3. UI OVERLAYS (Menus)
+    this.menuGroup = this.add.container(0, 0).setDepth(100);
+    this.pauseGroup = this.add.container(0, 0).setDepth(101).setVisible(false);
+
+    setupMainMenu(this);
+    setupPauseMenu(this);
+
+    // Pause Button Logic
+    this.pauseBtn.on('pointerdown', () => {
+        gameActive = false;
+        this.pauseGroup.setVisible(true);
+    });
 }
 
-// --- MENUS ---
-
-function createMainMenu(scene) {
-    scene.menuGroup = scene.add.container(0, 0).setDepth(100);
+function setupMainMenu(scene) {
     let bg = scene.add.rectangle(config.width/2, config.height/2, config.width, config.height, 0x1a1a2e, 1);
-    let title = scene.add.text(config.width/2, config.height/4, 'ANIMAL POP', { fontSize: '64px', fill: '#ff0066', fontStyle: 'bold' }).setOrigin(0.5);
+    let title = scene.add.text(config.width/2, config.height/4, 'ANIMAL POP', { 
+        fontSize: '64px', fill: '#ff0066', fontStyle: 'bold' 
+    }).setOrigin(0.5);
     
-    let rushBtn = createBtn(scene, config.height/2 - 50, '1 MIN RUSH', '#00ffcc', () => startLevel(scene, 'rush'));
-    let endlessBtn = createBtn(scene, config.height/2 + 50, 'ENDLESS MODE', '#f1c40f', () => startLevel(scene, 'endless'));
+    let rushBtn = createStyledBtn(scene, config.height/2 - 40, '1 MIN RUSH', '#00ffcc', () => startLevel(scene, 'rush'));
+    let endlessBtn = createStyledBtn(scene, config.height/2 + 60, 'ENDLESS MODE', '#f1c40f', () => startLevel(scene, 'endless'));
 
     scene.menuGroup.add([bg, title, rushBtn, endlessBtn]);
 }
 
-function createPauseMenu(scene) {
-    scene.pauseGroup = scene.add.container(0, 0).setDepth(101).setVisible(false);
+function setupPauseMenu(scene) {
     let bg = scene.add.rectangle(config.width/2, config.height/2, config.width, config.height, 0x000000, 0.8);
-    
-    let resumeBtn = createBtn(scene, config.height/2 - 50, 'RESUME', '#2ecc71', () => hidePauseMenu(scene));
-    let quitBtn = createBtn(scene, config.height/2 + 50, 'QUIT GAME', '#e74c3c', () => location.reload());
+    let resumeBtn = createStyledBtn(scene, config.height/2 - 40, 'RESUME', '#2ecc71', () => {
+        gameActive = true;
+        scene.pauseGroup.setVisible(false);
+    });
+    let quitBtn = createStyledBtn(scene, config.height/2 + 60, 'QUIT GAME', '#e74c3c', () => location.reload());
 
     scene.pauseGroup.add([bg, resumeBtn, quitBtn]);
 }
 
-function createBtn(scene, y, label, color, callback) {
-    return scene.add.text(config.width/2, y, label, { fontSize: '32px', backgroundColor: color, color: '#000', padding: 15 })
-        .setOrigin(0.5).setInteractive().on('pointerdown', callback);
+function createStyledBtn(scene, y, label, color, callback) {
+    let btn = scene.add.text(config.width/2, y, label, { 
+        fontSize: '32px', backgroundColor: color, color: '#000', padding: 15, fontStyle: 'bold' 
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    btn.on('pointerdown', callback);
+    return btn;
 }
-
-// --- GAME CONTROLS ---
 
 function startLevel(scene, mode) {
     gameMode = mode;
     score = 0;
     timeLeft = 60;
     gameActive = true;
+    
     scene.menuGroup.setVisible(false);
     scene.scoreText.setVisible(true).setText('SCORE: 0');
     scene.pauseBtn.setVisible(true);
@@ -87,36 +102,20 @@ function startLevel(scene, mode) {
         if (timerEvent) timerEvent.remove();
         timerEvent = scene.time.addEvent({
             delay: 1000,
-            callback: () => { if(gameActive) { timeLeft--; scene.timerText.setText(timeLeft + 's'); if(timeLeft <= 0) location.reload(); }},
+            callback: () => { 
+                if(gameActive) { 
+                    timeLeft--; 
+                    scene.timerText.setText(timeLeft + 's'); 
+                    if(timeLeft <= 0) location.reload(); 
+                }
+            },
             loop: true
         });
-    } else {
-        scene.timerText.setVisible(false);
     }
-    
     spawnColorBomb(scene);
 }
 
-function showPauseMenu(scene) {
-    gameActive = false;
-    scene.pauseGroup.setVisible(true);
-}
-
-function hidePauseMenu(scene) {
-    gameActive = true;
-    scene.pauseGroup.setVisible(false);
-}
-
-// --- TILE LOGIC ---
-
-function spawnTile(x, y, scene) {
-    let frame = Phaser.Utils.Array.GetRandom(ANIMAL_FRAMES);
-    let tile = scene.add.sprite(x * TILE_SIZE + TILE_SIZE, y * TILE_SIZE + 200, 'animals', frame);
-    tile.setScale((TILE_SIZE / 136) * 0.9).setInteractive();
-    tile.setData({ color: frame, gridX: x, gridY: y });
-    tile.on('pointerdown', () => handleSelect(tile, scene));
-    return tile;
-}
+// --- TILE & GAMEPLAY LOGIC ---
 
 function createGrid(scene) {
     for (let y = 0; y < GRID_SIZE; y++) {
@@ -127,16 +126,33 @@ function createGrid(scene) {
     }
 }
 
+function spawnTile(x, y, scene) {
+    let frame = Phaser.Utils.Array.GetRandom(ANIMAL_FRAMES);
+    let tile = scene.add.sprite(x * TILE_SIZE + TILE_SIZE, y * TILE_SIZE + 200, 'animals', frame);
+    tile.setScale((TILE_SIZE / 136) * 0.9).setInteractive();
+    tile.setData({ color: frame, gridX: x, gridY: y });
+    tile.on('pointerdown', () => handleSelect(tile, scene));
+    return tile;
+}
+
+function spawnColorBomb(scene) {
+    let rx = Phaser.Math.Between(0, 9), ry = Phaser.Math.Between(0, 9);
+    let bomb = grid[ry][rx];
+    if (bomb) {
+        bomb.setTint(0x000000);
+        bomb.setData('special', 'colorBomb');
+        scene.tweens.add({ targets: bomb, scale: 0.6, duration: 600, yoyo: true, repeat: -1 });
+    }
+}
+
 async function handleSelect(tile, scene) {
     if (isProcessing || !gameActive) return;
     lastMoveTime = scene.time.now;
 
-    // --- COLOR BOMB LOGIC (Instant Touch) ---
     if (tile.getData('special') === 'colorBomb') {
         isProcessing = true;
         scene.sound.play('bomb');
         await explodeColor(scene, tile.getData('color'));
-        grid[tile.getData('gridY')][tile.getData('gridX')] = null;
         tile.destroy();
         isProcessing = false;
         return;
@@ -160,8 +176,6 @@ async function handleSelect(tile, scene) {
         }
     }
 }
-
-// --- MOVEMENT & PHYSICS ---
 
 function swapTiles(tile1, tile2, scene, check) {
     const x1 = tile1.getData('gridX'), y1 = tile1.getData('gridY');
@@ -211,7 +225,6 @@ function checkMatches(scene) {
             }
         }
     }
-
     if (matchedSet.size > 0) {
         score += matchedSet.size * 10;
         scene.scoreText.setText('SCORE: ' + score);
@@ -229,18 +242,18 @@ function checkMatches(scene) {
 
 function processMatches(scene) {
     for (let x = 0; x < GRID_SIZE; x++) {
-        let emptySpots = 0;
+        let empty = 0;
         for (let y = GRID_SIZE - 1; y >= 0; y--) {
-            if (grid[y][x] === null) emptySpots++;
-            else if (emptySpots > 0) {
+            if (grid[y][x] === null) empty++;
+            else if (empty > 0) {
                 let tile = grid[y][x];
-                grid[y + emptySpots][x] = tile;
+                grid[y + empty][x] = tile;
                 grid[y][x] = null;
-                tile.setData('gridY', y + emptySpots);
-                scene.tweens.add({ targets: tile, y: (y + emptySpots) * TILE_SIZE + 200, duration: 250 });
+                tile.setData('gridY', y + empty);
+                scene.tweens.add({ targets: tile, y: (y + empty) * TILE_SIZE + 200, duration: 250 });
             }
         }
-        for (let i = 0; i < emptySpots; i++) {
+        for (let i = 0; i < empty; i++) {
             let tile = spawnTile(x, i, scene);
             grid[i][x] = tile;
             tile.y = -50;
@@ -265,20 +278,13 @@ async function explodeColor(scene, color) {
     processMatches(scene);
 }
 
-function spawnColorBomb(scene) {
-    let rx = Phaser.Math.Between(0, 9), ry = Phaser.Math.Between(0, 9);
-    let bomb = grid[ry][rx];
-    if (bomb) {
-        bomb.setTint(0x000000);
-        bomb.setData('special', 'colorBomb');
-        scene.tweens.add({ targets: bomb, scale: 0.6, duration: 600, yoyo: true, repeat: -1 });
-    }
-}
-
 function update(time) {
     if (gameActive && time - lastMoveTime > 4000) {
         let t = grid[Phaser.Math.Between(0,9)][Phaser.Math.Between(0,9)];
-        if (t) { this.tweens.add({ targets: t, angle: 10, yoyo: true, duration: 80, repeat: 4 }); lastMoveTime = time; }
+        if (t) { 
+            this.tweens.add({ targets: t, angle: 10, yoyo: true, duration: 80, repeat: 4 }); 
+            lastMoveTime = time; 
+        }
     }
-                   }
-                
+}
+
