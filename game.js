@@ -1,7 +1,7 @@
 const config = {
     type: Phaser.AUTO,
-    width: 600,  // Increased width
-    height: 800, // Increased height
+    width: 440,
+    height: 600,
     backgroundColor: '#2c3e50',
     scene: { preload: preload, create: create, update: update }
 };
@@ -9,7 +9,7 @@ const config = {
 const game = new Phaser.Game(config);
 
 const GRID_SIZE = 8;
-const TILE_SIZE = 70; // Larger tiles
+const TILE_SIZE = 55;
 const ANIMAL_FRAMES = [0, 1, 2, 3, 4, 5]; 
 
 let grid = [];
@@ -17,85 +17,112 @@ let selectedTile = null;
 let isProcessing = false;
 let score = 0;
 let timeLeft = 60;
-let gameMode = 'rush'; // 'rush' or 'endless'
+let gameMode = 'rush';
 let gameActive = false;
 let lastMoveTime = 0;
-let hintTween = null;
+let timerEvent;
 
 // UI Elements
-let scoreText, timerText, menuPanel, titleText, modeText;
+let scoreText, timerText, overlay, menuContainer;
 
 function preload() {
-    this.load.spritesheet('animals', 'candy_sheet.png', { frameWidth: 136, frameHeight: 136 });
+    this.load.spritesheet('animals', 'candy_sheet.png', {
+        frameWidth: 136, 
+        frameHeight: 136
+    });
 }
 
 function create() {
-    scoreText = this.add.text(20, 720, 'Score: 0', { fontSize: '32px', fill: '#fff' });
-    timerText = this.add.text(400, 720, 'Time: 60', { fontSize: '32px', fill: '#fff' });
-    
-    createGrid(this);
+    // UI Layout
+    scoreText = this.add.text(20, 540, 'SCORE: 0', { fontSize: '24px', fill: '#fff', fontStyle: 'bold' });
+    timerText = this.add.text(280, 540, 'TIME: 60', { fontSize: '24px', fill: '#fff', fontStyle: 'bold' });
+
+    // Initial Grid (Hidden by menu)
+    for (let y = 0; y < GRID_SIZE; y++) {
+        grid[y] = [];
+        for (let x = 0; x < GRID_SIZE; x++) {
+            spawnTile(x, y, this);
+        }
+    }
+
     createMenu(this);
-    lastMoveTime = this.time.now;
 }
 
 function createMenu(scene) {
-    menuPanel = scene.add.container(300, 400).setDepth(100);
-    let bg = scene.add.rectangle(0, 0, 500, 600, 0x000000, 0.9).setInteractive();
-    titleText = scene.add.text(0, -200, 'ANIMAL MATCH', { fontSize: '48px', fill: '#ff0' }).setOrigin(0.5);
+    menuContainer = scene.add.container(0, 0).setDepth(100);
+    overlay = scene.add.rectangle(220, 300, 440, 600, 0x000000, 0.85);
     
-    let btnRush = createButton(scene, 0, -50, '1 MIN RUSH', () => startNewGame(scene, 'rush'));
-    let btnEndless = createButton(scene, 0, 50, 'ENDLESS MODE', () => startNewGame(scene, 'endless'));
+    let title = scene.add.text(220, 150, 'ANIMAL MATCH', { fontSize: '42px', fill: '#f1c40f', fontStyle: 'bold' }).setOrigin(0.5);
     
-    menuPanel.add([bg, titleText, btnRush, btnEndless]);
+    let rushBtn = scene.add.text(220, 280, '1 MIN RUSH', { fontSize: '28px', backgroundColor: '#e74c3c', padding: 15 })
+        .setOrigin(0.5).setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => startLevel(scene, 'rush'));
+
+    let endlessBtn = scene.add.text(220, 380, 'ENDLESS MODE', { fontSize: '28px', backgroundColor: '#2ecc71', padding: 15 })
+        .setOrigin(0.5).setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => startLevel(scene, 'endless'));
+
+    menuContainer.add([overlay, title, rushBtn, endlessBtn]);
 }
 
-function createButton(scene, x, y, label, callback) {
-    let btn = scene.add.text(x, y, label, { fontSize: '32px', backgroundColor: '#e74c3c', padding: 15 })
-        .setOrigin(0.5).setInteractive({ useHandCursor: true });
-    btn.on('pointerdown', callback);
-    return btn;
-}
-
-function startNewGame(scene, mode) {
+function startLevel(scene, mode) {
     gameMode = mode;
     score = 0;
     timeLeft = 60;
     gameActive = true;
-    menuPanel.setVisible(false);
+    menuContainer.setVisible(false);
+    scoreText.setText('SCORE: 0');
     lastMoveTime = scene.time.now;
 
     if (mode === 'rush') {
-        spawnColorBomb(scene); // OG Color Bomb at start
+        timerText.setVisible(true);
+        startTimer(scene);
+        // Add OG Black Ball (Color Bomb) immediately in Rush
+        let rx = Phaser.Math.Between(0, 7), ry = Phaser.Math.Between(0, 7);
+        makeSpecial(grid[ry][rx], 'colorBomb');
+    } else {
+        timerText.setVisible(false);
     }
 }
 
-function spawnColorBomb(scene) {
-    let rx = Phaser.Math.Between(0, 7);
-    let ry = Phaser.Math.Between(0, 7);
-    if (grid[ry][rx]) {
-        grid[ry][rx].setData('isBigBomb', true);
-        grid[ry][rx].setTint(0x000000); // Black Ball appearance
-        scene.tweens.add({ targets: grid[ry][rx], scale: 0.6, yoyo: true, repeat: -1 });
+function makeSpecial(tile, type) {
+    tile.setData('special', type);
+    if (type === 'colorBomb') {
+        tile.setTint(0x333333); // The "Black Ball" look
     }
+}
+
+function spawnTile(x, y, scene) {
+    let frame = Phaser.Utils.Array.GetRandom(ANIMAL_FRAMES);
+    let tile = scene.add.sprite(x * TILE_SIZE + 30, y * TILE_SIZE + 50, 'animals', frame);
+    tile.setScale(0.38).setInteractive();
+    tile.setData({ color: frame, gridX: x, gridY: y });
+    tile.on('pointerdown', () => { if(gameActive) handleSelect(tile, scene); });
+    grid[y][x] = tile;
+    return tile;
 }
 
 async function handleSelect(tile, scene) {
-    if (isProcessing || !gameActive) return;
-    clearHint();
+    if (isProcessing) return;
     lastMoveTime = scene.time.now;
 
     if (!selectedTile) {
         selectedTile = tile;
-        tile.setScale(0.6);
+        tile.setAlpha(0.6);
     } else {
-        if (Phaser.Math.Distance.Between(selectedTile.x, selectedTile.y, tile.x, tile.y) <= TILE_SIZE + 5) {
+        let x1 = selectedTile.getData('gridX'), y1 = selectedTile.getData('gridY');
+        let x2 = tile.getData('gridX'), y2 = tile.getData('gridY');
+
+        if (Math.abs(x1 - x2) + Math.abs(y1 - y2) === 1) {
             isProcessing = true;
-            
-            // Check for Color Bomb Logic
-            if (selectedTile.getData('isBigBomb') || tile.getData('isBigBomb')) {
-                let colorToClear = selectedTile.getData('isBigBomb') ? tile.getData('color') : selectedTile.getData('color');
-                await explodeColor(scene, colorToClear);
-                selectedTile.destroy(); tile.destroy();
+            selectedTile.setAlpha(1);
+
+            // SPECIAL: Color Bomb Logic
+            if (selectedTile.getData('special') === 'colorBomb' || tile.getData('special') === 'colorBomb') {
+                let colorToClear = (selectedTile.getData('special') === 'colorBomb') ? tile.getData('color') : selectedTile.getData('color');
+                await clearAllOfColor(scene, colorToClear);
+                if (selectedTile.getData('special') === 'colorBomb') selectedTile.destroy();
+                else tile.destroy();
             } else {
                 await swapTiles(selectedTile, tile, scene);
                 if (checkMatches(scene)) {
@@ -107,18 +134,18 @@ async function handleSelect(tile, scene) {
             selectedTile = null;
             isProcessing = false;
         } else {
-            selectedTile.setScale(0.5);
+            selectedTile.setAlpha(1);
             selectedTile = tile;
-            tile.setScale(0.6);
+            tile.setAlpha(0.6);
         }
     }
 }
 
-async function explodeColor(scene, color) {
+async function clearAllOfColor(scene, color) {
     for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE; x++) {
             if (grid[y][x] && grid[y][x].getData('color') === color) {
-                scene.tweens.add({ targets: grid[y][x], scale: 0, duration: 200 });
+                grid[y][x].destroy();
                 grid[y][x] = null;
             }
         }
@@ -126,38 +153,108 @@ async function explodeColor(scene, color) {
     await processMatches(scene);
 }
 
-function update(time) {
-    if (gameActive && time - lastMoveTime > 5000) {
-        showHint(this);
-        lastMoveTime = time; // Reset hint timer
-    }
+function swapTiles(tile1, tile2, scene) {
+    return new Promise(resolve => {
+        const x1 = tile1.getData('gridX'), y1 = tile1.getData('gridY');
+        const x2 = tile2.getData('gridX'), y2 = tile2.getData('gridY');
+        grid[y1][x1] = tile2; grid[y2][x2] = tile1;
+        tile1.setData({gridX: x2, gridY: y2});
+        tile2.setData({gridX: x1, gridY: y1});
+        scene.tweens.add({
+            targets: [tile1, tile2],
+            x: (t) => t.getData('gridX') * TILE_SIZE + 30,
+            y: (t) => t.getData('gridY') * TILE_SIZE + 50,
+            duration: 200, onComplete: resolve
+        });
+    });
 }
 
-function showHint(scene) {
-    // Logic to find first possible match
+function checkMatches(scene) {
+    let toDestroy = new Set();
     for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE; x++) {
-            if (grid[y][x]) {
-                hintTween = scene.tweens.add({
-                    targets: grid[y][x],
-                    alpha: 0.5,
-                    yoyo: true,
-                    repeat: 2,
-                    duration: 300
-                });
-                return; 
+            // Horizontal
+            if (x < GRID_SIZE - 2 && grid[y][x] && grid[y][x+1] && grid[y][x+2]) {
+                if (grid[y][x].getData('color') === grid[y][x+1].getData('color') && 
+                    grid[y][x].getData('color') === grid[y][x+2].getData('color')) {
+                    toDestroy.add(grid[y][x]); toDestroy.add(grid[y][x+1]); toDestroy.add(grid[y][x+2]);
+                }
+            }
+            // Vertical
+            if (y < GRID_SIZE - 2 && grid[y][x] && grid[y+1][x] && grid[y+2][x]) {
+                if (grid[y][x].getData('color') === grid[y+1][x].getData('color') && 
+                    grid[y][x].getData('color') === grid[y+2][x].getData('color')) {
+                    toDestroy.add(grid[y][x]); toDestroy.add(grid[y+1][x]); toDestroy.add(grid[y+2][x]);
+                }
             }
         }
     }
+
+    if (toDestroy.size > 0) {
+        score += toDestroy.size * 10;
+        scoreText.setText('SCORE: ' + score);
+        toDestroy.forEach(t => {
+            grid[t.getData('gridY')][t.getData('gridX')] = null;
+            scene.tweens.add({ targets: t, scale: 0, duration: 200, onComplete: () => t.destroy() });
+        });
+        return true;
+    }
+    return false;
 }
 
-function clearHint() {
-    if (hintTween) {
-        hintTween.stop();
-        hintTween = null;
+async function processMatches(scene) {
+    await new Promise(r => setTimeout(r, 300));
+    for (let x = 0; x < GRID_SIZE; x++) {
+        for (let y = GRID_SIZE - 1; y >= 0; y--) {
+            if (grid[y][x] === null) {
+                for (let k = y - 1; k >= 0; k--) {
+                    if (grid[k][x]) {
+                        grid[y][x] = grid[k][x]; grid[k][x] = null;
+                        grid[y][x].setData('gridY', y);
+                        scene.tweens.add({ targets: grid[y][x], y: y * TILE_SIZE + 50, duration: 300, ease: 'Bounce' });
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    for (let x = 0; x < GRID_SIZE; x++) {
+        for (let y = 0; y < GRID_SIZE; y++) {
+            if (grid[y][x] === null) {
+                let tile = spawnTile(x, y, scene);
+                tile.y = -50;
+                scene.tweens.add({ targets: tile, y: y * TILE_SIZE + 50, duration: 300 });
+            }
+        }
+    }
+    await new Promise(r => setTimeout(r, 400));
+    if (checkMatches(scene)) await processMatches(scene);
+}
+
+function startTimer(scene) {
+    if (timerEvent) timerEvent.remove();
+    timerEvent = scene.time.addEvent({
+        delay: 1000,
+        callback: () => {
+            timeLeft--;
+            timerText.setText('TIME: ' + timeLeft);
+            if (timeLeft <= 0) {
+                gameActive = false;
+                menuContainer.setVisible(true);
+            }
+        },
+        loop: true
+    });
+}
+
+function update(time) {
+    // Hint System: Pulse an animal after 5s
+    if (gameActive && time - lastMoveTime > 5000) {
+        let rx = Phaser.Math.Between(0, 7), ry = Phaser.Math.Between(0, 7);
+        if (grid[ry][rx]) {
+            this.tweens.add({ targets: grid[ry][rx], alpha: 0.5, yoyo: true, duration: 300 });
+            lastMoveTime = time; 
+        }
     }
 }
-
-// ... spawnTile, swapTiles, createGrid from previous codes ...
-// checkMatches modified to return "4" or "5" for bombs
 
