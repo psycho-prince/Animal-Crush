@@ -101,6 +101,7 @@ function handleSelect(tile, scene) {
         let x1 = selectedTile.getData('gridX'), y1 = selectedTile.getData('gridY');
         let x2 = tile.getData('gridX'), y2 = tile.getData('gridY');
 
+        // Check if they are neighbors
         if (Math.abs(x1 - x2) + Math.abs(y1 - y2) === 1) {
             isProcessing = true;
             selectedTile.setAlpha(1);
@@ -117,25 +118,47 @@ function swapTiles(t1, t2, scene) {
     const x1 = t1.getData('gridX'), y1 = t1.getData('gridY');
     const x2 = t2.getData('gridX'), y2 = t2.getData('gridY');
 
-    grid[y1][x1] = t2; grid[y2][x2] = t1;
-    t1.setData({gridX: x2, gridY: y2}); t2.setData({gridX: x1, gridY: y1});
+    // Slide animation
+    scene.tweens.add({
+        targets: t1,
+        x: x2 * TILE_SIZE + TILE_SIZE,
+        y: y2 * TILE_SIZE + 200,
+        duration: 300
+    });
 
     scene.tweens.add({
-        targets: [t1, t2],
-        x: (t) => t.getData('gridX') * TILE_SIZE + TILE_SIZE,
-        y: (t) => t.getData('gridY') * TILE_SIZE + 200,
-        duration: 250,
+        targets: t2,
+        x: x1 * TILE_SIZE + TILE_SIZE,
+        y: y1 * TILE_SIZE + 200,
+        duration: 300,
         onComplete: () => {
+            // Update the logical grid after visual slide
+            grid[y1][x1] = t2;
+            grid[y2][x2] = t1;
+            t1.setData({gridX: x2, gridY: y2});
+            t2.setData({gridX: x1, gridY: y1});
+
             if (!checkMatches(scene)) {
-                // Swap Back
-                grid[y1][x1] = t1; grid[y2][x2] = t2;
-                t1.setData({gridX: x1, gridY: y1}); t2.setData({gridX: x2, gridY: y2});
+                // No match? Slide them back!
                 scene.tweens.add({
-                    targets: [t1, t2],
-                    x: (t) => t.getData('gridX') * TILE_SIZE + TILE_SIZE,
-                    y: (t) => t.getData('gridY') * TILE_SIZE + 200,
-                    duration: 250,
-                    onComplete: () => { isProcessing = false; selectedTile = null; }
+                    targets: t1,
+                    x: x1 * TILE_SIZE + TILE_SIZE,
+                    y: y1 * TILE_SIZE + 200,
+                    duration: 300
+                });
+                scene.tweens.add({
+                    targets: t2,
+                    x: x2 * TILE_SIZE + TILE_SIZE,
+                    y: y2 * TILE_SIZE + 200,
+                    duration: 300,
+                    onComplete: () => {
+                        grid[y1][x1] = t1;
+                        grid[y2][x2] = t2;
+                        t1.setData({gridX: x1, gridY: y1});
+                        t2.setData({gridX: x2, gridY: y2});
+                        isProcessing = false;
+                        selectedTile = null;
+                    }
                 });
             } else {
                 handleGravity(scene);
@@ -146,6 +169,7 @@ function swapTiles(t1, t2, scene) {
 
 function checkMatches(scene) {
     let toClear = [];
+    // Rows
     for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE - 2; x++) {
             let t1 = grid[y][x], t2 = grid[y][x+1], t3 = grid[y][x+2];
@@ -154,6 +178,7 @@ function checkMatches(scene) {
             }
         }
     }
+    // Cols
     for (let x = 0; x < GRID_SIZE; x++) {
         for (let y = 0; y < GRID_SIZE - 2; y++) {
             let t1 = grid[y][x], t2 = grid[y+1][x], t3 = grid[y+2][x];
@@ -179,40 +204,36 @@ function checkMatches(scene) {
 }
 
 function handleGravity(scene) {
-    let longestFall = 0;
-
+    let delay = 0;
     for (let x = 0; x < GRID_SIZE; x++) {
-        let emptySpaces = 0;
+        let holes = 0;
         for (let y = GRID_SIZE - 1; y >= 0; y--) {
             if (grid[y][x] === null) {
-                emptySpaces++;
-            } else if (emptySpaces > 0) {
+                holes++;
+            } else if (holes > 0) {
                 let tile = grid[y][x];
-                grid[y + emptySpaces][x] = tile;
+                grid[y + holes][x] = tile;
                 grid[y][x] = null;
-                tile.setData('gridY', y + emptySpaces);
-                
+                tile.setData('gridY', y + holes);
                 scene.tweens.add({
                     targets: tile,
-                    y: (y + emptySpaces) * TILE_SIZE + 200,
-                    duration: 300,
-                    ease: 'Power1'
+                    y: (y + holes) * TILE_SIZE + 200,
+                    duration: 400,
+                    ease: 'Bounce.easeOut'
                 });
-                longestFall = 300;
+                delay = 450;
             }
         }
-        // Refill
-        for (let i = 0; i < emptySpaces; i++) {
+        for (let i = 0; i < holes; i++) {
             let t = spawnTile(x, i, scene);
             grid[i][x] = t;
             t.y = -100;
-            scene.tweens.add({ targets: t, y: i * TILE_SIZE + 200, duration: 400 });
-            longestFall = 400;
+            scene.tweens.add({ targets: t, y: i * TILE_SIZE + 200, duration: 450, ease: 'Bounce.easeOut' });
+            delay = 500;
         }
     }
 
-    // Wait for the longest animation to finish before checking for new matches
-    scene.time.delayedCall(longestFall + 50, () => {
+    scene.time.delayedCall(delay, () => {
         if (checkMatches(scene)) {
             handleGravity(scene);
         } else {
