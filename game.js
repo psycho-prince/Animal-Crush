@@ -2,70 +2,122 @@ const config = {
     type: Phaser.AUTO,
     width: 400,
     height: 400,
+    backgroundColor: '#222',
     scene: { preload: preload, create: create }
 };
 
 const game = new Phaser.Game(config);
 const GRID_SIZE = 8;
 const TILE_SIZE = 50;
-const COLORS = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff]; // Red, Green, Blue, Yellow, Pink
+const COLORS = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff];
 
 let grid = [];
 let selectedTile = null;
+let isProcessing = false; // Prevents clicking while tiles are moving
 
-function preload() {
-    // We will generate textures programmatically so no external images are needed
-}
+function preload() {}
 
 function create() {
-    // 1. Create the grid
     for (let y = 0; y < GRID_SIZE; y++) {
         grid[y] = [];
         for (let x = 0; x < GRID_SIZE; x++) {
-            let color = Phaser.Utils.Array.GetRandom(COLORS);
-            let tile = this.add.rectangle(x * TILE_SIZE + 25, y * TILE_SIZE + 25, 45, 45, color);
-            
-            tile.setInteractive();
-            tile.setData('gridX', x);
-            tile.setData('gridY', y);
-            tile.setData('color', color);
-
-            tile.on('pointerdown', () => handleSelect(tile));
-            grid[y][x] = tile;
+            spawnTile(x, y, this);
         }
     }
 }
 
-function handleSelect(tile) {
+function spawnTile(x, y, scene) {
+    let color = Phaser.Utils.Array.GetRandom(COLORS);
+    let tile = scene.add.rectangle(x * TILE_SIZE + 25, y * TILE_SIZE + 25, 42, 42, color);
+    tile.setInteractive();
+    tile.setData('color', color);
+    tile.setData('gridX', x);
+    tile.setData('gridY', y);
+    tile.on('pointerdown', () => handleSelect(tile, scene));
+    grid[y][x] = tile;
+}
+
+async function handleSelect(tile, scene) {
+    if (isProcessing) return;
+
     if (!selectedTile) {
         selectedTile = tile;
-        tile.setStrokeStyle(4, 0xffffff); // Highlight selected
+        tile.setStrokeStyle(3, 0xffffff);
     } else {
-        const x1 = selectedTile.getData('gridX');
-        const y1 = selectedTile.getData('gridY');
-        const x2 = tile.getData('gridX');
-        const y2 = tile.getData('gridY');
+        let x1 = selectedTile.getData('gridX'), y1 = selectedTile.getData('gridY');
+        let x2 = tile.getData('gridX'), y2 = tile.getData('gridY');
 
-        // Check if tiles are neighbors
-        const dist = Math.abs(x1 - x2) + Math.abs(y1 - y2);
-        if (dist === 1) {
-            swapTiles(selectedTile, tile);
+        if (Math.abs(x1 - x2) + Math.abs(y1 - y2) === 1) {
+            isProcessing = true;
+            selectedTile.setStrokeStyle(0);
+            await swapTiles(selectedTile, tile, scene);
+            
+            if (!checkMatches(scene)) {
+                // If no match, swap back
+                await swapTiles(selectedTile, tile, scene);
+            }
+            selectedTile = null;
+            isProcessing = false;
+        } else {
+            selectedTile.setStrokeStyle(0);
+            selectedTile = tile;
+            tile.setStrokeStyle(3, 0xffffff);
         }
-
-        selectedTile.setStrokeStyle(0);
-        selectedTile = null;
     }
 }
 
-function swapTiles(tile1, tile2) {
-    // Visual Swap
-    const tempX = tile1.x;
-    const tempY = tile1.y;
-    tile1.x = tile2.x;
-    tile1.y = tile2.y;
-    tile2.x = tempX;
-    tile2.y = tempY;
+function swapTiles(tile1, tile2, scene) {
+    return new Promise(resolve => {
+        const x1 = tile1.getData('gridX'), y1 = tile1.getData('gridY');
+        const x2 = tile2.getData('gridX'), y2 = tile2.getData('gridY');
 
-    // Update Data logic here (Check for matches of 3)
-    console.log("Tiles swapped! Now check for matches...");
+        // Update Grid Array
+        grid[y1][x1] = tile2;
+        grid[y2][x2] = tile1;
+
+        // Update Data
+        tile1.setData('gridX', x2); tile1.setData('gridY', y2);
+        tile2.setData('gridX', x1); tile2.setData('gridY', y1);
+
+        // Animate
+        scene.tweens.add({
+            targets: [tile1, tile2],
+            x: (target) => target.getData('gridX') * TILE_SIZE + 25,
+            y: (target) => target.getData('gridY') * TILE_SIZE + 25,
+            duration: 200,
+            onComplete: resolve
+        });
+    });
 }
+
+function checkMatches(scene) {
+    let toDestroy = new Set();
+    
+    // Check Horizontal
+    for (let y = 0; y < GRID_SIZE; y++) {
+        for (let x = 0; x < GRID_SIZE - 2; x++) {
+            let c1 = grid[y][x].getData('color'), c2 = grid[y][x+1].getData('color'), c3 = grid[y][x+2].getData('color');
+            if (c1 === c2 && c2 === c3) {
+                toDestroy.add(grid[y][x]); toDestroy.add(grid[y][x+1]); toDestroy.add(grid[y][x+2]);
+            }
+        }
+    }
+    // Check Vertical
+    for (let x = 0; x < GRID_SIZE; x++) {
+        for (let y = 0; y < GRID_SIZE - 2; y++) {
+            let c1 = grid[y][x].getData('color'), c2 = grid[y+1][x].getData('color'), c3 = grid[y+2][x].getData('color');
+            if (c1 === c2 && c2 === c3) {
+                toDestroy.add(grid[y][x]); toDestroy.add(grid[y+1][x]); toDestroy.add(grid[y+2][x]);
+            }
+        }
+    }
+
+    if (toDestroy.size > 0) {
+        toDestroy.forEach(t => t.destroy());
+        // Note: Real Candy Crush would make tiles fall here. 
+        // For now, they just disappear.
+        return true;
+    }
+    return false;
+}
+
