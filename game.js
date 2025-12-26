@@ -24,7 +24,6 @@ let timerEvent;
 function preload() {
     this.load.spritesheet('animals', 'candy_sheet.png', { frameWidth: 136, frameHeight: 136 });
     this.load.audio('pop', 'https://actions.google.com/sounds/v1/cartoon/pop.ogg');
-    this.load.audio('bomb', 'https://actions.google.com/sounds/v1/science_fiction/stinger_ray_gun.ogg');
 }
 
 function create() {
@@ -40,7 +39,7 @@ function create() {
 }
 
 function setupMenus(scene) {
-    // Main Menu
+    // Main Menu Group
     scene.menuGroup = scene.add.container(0, 0).setDepth(100);
     let bg = scene.add.rectangle(config.width/2, config.height/2, config.width, config.height, 0x1a1a2e, 1);
     let title = scene.add.text(config.width/2, config.height/4, 'ANIMAL POP', { fontSize: '60px', fill: '#ff0066', fontStyle: 'bold' }).setOrigin(0.5);
@@ -49,7 +48,7 @@ function setupMenus(scene) {
     let endlessBtn = createBtn(scene, config.height/2 + 60, 'ENDLESS', '#f1c40f', () => startLevel(scene, 'endless'));
     scene.menuGroup.add([bg, title, rushBtn, endlessBtn]);
 
-    // Pause Menu
+    // Pause Menu Group
     scene.pauseGroup = scene.add.container(0, 0).setDepth(101).setVisible(false);
     let pBg = scene.add.rectangle(config.width/2, config.height/2, config.width, config.height, 0x000000, 0.8);
     let resBtn = createBtn(scene, config.height/2 - 40, 'RESUME', '#2ecc71', () => { gameActive = true; scene.pauseGroup.setVisible(false); });
@@ -71,9 +70,14 @@ function startLevel(scene, mode) {
     scene.pauseBtn.setVisible(true);
     if (mode === 'rush') {
         scene.timerText.setVisible(true);
-        timerEvent = scene.time.addEvent({ delay: 1000, callback: () => { if(gameActive) { timeLeft--; scene.timerText.setText(timeLeft+'s'); if(timeLeft<=0) location.reload(); }}, loop: true });
+        timerEvent = scene.time.addEvent({ delay: 1000, callback: () => { 
+            if(gameActive) { 
+                timeLeft--; 
+                scene.timerText.setText(timeLeft+'s'); 
+                if(timeLeft<=0) location.reload(); 
+            }
+        }, loop: true });
     }
-    spawnColorBomb(scene);
 }
 
 function createGrid(scene) {
@@ -98,18 +102,10 @@ function handleSelect(tile, scene) {
     if (isProcessing || !gameActive) return;
     lastMoveTime = scene.time.now;
 
-    // FIX: Color Bomb is now a 1-tap activation
-    if (tile.getData('special') === 'colorBomb') {
-        isProcessing = true;
-        scene.sound.play('bomb');
-        let targetColor = tile.getData('color');
-        explodeColor(scene, targetColor, tile);
-        return;
-    }
-
     if (!selectedTile) {
         selectedTile = tile;
         tile.setAlpha(0.5);
+        tile.setScale(tile.scale * 1.1);
     } else {
         let x1 = selectedTile.getData('gridX'), y1 = selectedTile.getData('gridY');
         let x2 = tile.getData('gridX'), y2 = tile.getData('gridY');
@@ -117,11 +113,15 @@ function handleSelect(tile, scene) {
         if (Math.abs(x1 - x2) + Math.abs(y1 - y2) === 1) {
             isProcessing = true;
             selectedTile.setAlpha(1);
+            selectedTile.setScale(selectedTile.scale / 1.1);
             swapTiles(selectedTile, tile, scene, true);
         } else {
+            // Deselect old and select new if they aren't neighbors
             selectedTile.setAlpha(1);
+            selectedTile.setScale(selectedTile.scale / 1.1);
             selectedTile = tile;
             tile.setAlpha(0.5);
+            tile.setScale(tile.scale * 1.1);
         }
     }
 }
@@ -129,6 +129,7 @@ function handleSelect(tile, scene) {
 function swapTiles(t1, t2, scene, check) {
     const x1 = t1.getData('gridX'), y1 = t1.getData('gridY');
     const x2 = t2.getData('gridX'), y2 = t2.getData('gridY');
+    
     grid[y1][x1] = t2; grid[y2][x2] = t1;
     t1.setData({gridX: x2, gridY: y2}); t2.setData({gridX: x1, gridY: y1});
 
@@ -151,26 +152,29 @@ function swapTiles(t1, t2, scene, check) {
 
 function checkMatches(scene) {
     let toClear = [];
-    // Horizontal
+    // Horizontal check
     for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE - 2; x++) {
             if (grid[y][x] && grid[y][x+1] && grid[y][x+2]) {
-                if (grid[y][x].getData('color') === grid[y][x+1].getData('color') && grid[y][x].getData('color') === grid[y][x+2].getData('color')) {
+                if (grid[y][x].getData('color') === grid[y][x+1].getData('color') && 
+                    grid[y][x].getData('color') === grid[y][x+2].getData('color')) {
                     toClear.push(grid[y][x], grid[y][x+1], grid[y][x+2]);
                 }
             }
         }
     }
-    // Vertical
+    // Vertical check
     for (let x = 0; x < GRID_SIZE; x++) {
         for (let y = 0; y < GRID_SIZE - 2; y++) {
             if (grid[y][x] && grid[y+1][x] && grid[y+2][x]) {
-                if (grid[y][x].getData('color') === grid[y+1][x].getData('color') && grid[y][x].getData('color') === grid[y+2][x].getData('color')) {
+                if (grid[y][x].getData('color') === grid[y+1][x].getData('color') && 
+                    grid[y][x].getData('color') === grid[y+2][x].getData('color')) {
                     toClear.push(grid[y][x], grid[y+1][x], grid[y+2][x]);
                 }
             }
         }
     }
+    
     if (toClear.length > 0) {
         scene.sound.play('pop');
         toClear.forEach(t => { 
@@ -200,7 +204,7 @@ function processMatches(scene) {
         }
         for (let i = 0; i < fall; i++) {
             let t = spawnTile(x, i, scene);
-            grid[i][x] = t; t.y = -50;
+            grid[i][x] = t; t.y = -100; // Come from above screen
             scene.tweens.add({ targets: t, y: i * TILE_SIZE + 200, duration: 400 });
         }
     }
@@ -210,33 +214,16 @@ function processMatches(scene) {
     });
 }
 
-function explodeColor(scene, color, bombTile) {
-    grid[bombTile.getData('gridY')][bombTile.getData('gridX')] = null;
-    bombTile.destroy();
-    for (let y = 0; y < GRID_SIZE; y++) {
-        for (let x = 0; x < GRID_SIZE; x++) {
-            if (grid[y][x] && grid[y][x].getData('color') === color) {
-                grid[y][x].destroy(); grid[y][x] = null;
-                score += 20;
-            }
+function update(time) {
+    // Hint logic: Shakes a random tile if no move for 4 seconds
+    if (gameActive && time - lastMoveTime > 4000) {
+        let rx = Phaser.Math.Between(0, 9);
+        let ry = Phaser.Math.Between(0, 9);
+        let t = grid[ry][rx];
+        if (t) { 
+            this.tweens.add({ targets: t, angle: 10, yoyo: true, duration: 100, repeat: 3 }); 
+            lastMoveTime = time; 
         }
     }
-    scene.scoreText.setText('SCORE: ' + score);
-    processMatches(scene);
-}
+        }
 
-function spawnColorBomb(scene) {
-    let rx = Phaser.Math.Between(0, 9), ry = Phaser.Math.Between(0, 9);
-    if (grid[ry][rx]) {
-        grid[ry][rx].setTint(0x333333).setData('special', 'colorBomb');
-        scene.tweens.add({ targets: grid[ry][rx], scale: 0.5, angle: 360, duration: 1000, repeat: -1 });
-    }
-}
-
-function update(time) {
-    if (gameActive && time - lastMoveTime > 4000) {
-        let t = grid[Phaser.Math.Between(0,9)][Phaser.Math.Between(0,9)];
-        if (t) { this.tweens.add({ targets: t, angle: 10, yoyo: true, duration: 100, repeat: 3 }); lastMoveTime = time; }
-    }
-                    }
-            
