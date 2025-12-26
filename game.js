@@ -1,15 +1,16 @@
 const config = {
     type: Phaser.AUTO,
     width: 400,
-    height: 480, // Made it taller for the Score
-    backgroundColor: '#222',
+    height: 500, // Extra space for the score at the bottom
+    backgroundColor: '#2c3e50',
     scene: { preload: preload, create: create }
 };
 
 const game = new Phaser.Game(config);
+
 const GRID_SIZE = 8;
 const TILE_SIZE = 50;
-const COLORS = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff];
+const CANDY_FRAMES = [0, 1, 2, 3, 4, 5]; // Different gem types in the sprite sheet
 
 let grid = [];
 let selectedTile = null;
@@ -17,11 +18,24 @@ let isProcessing = false;
 let score = 0;
 let scoreText;
 
-function preload() {}
+function preload() {
+    // Loading a colorful gem spritesheet (32x32 pixels per gem)
+    this.load.spritesheet('candies', 'https://labs.phaser.io/assets/sprites/columns-gems.png', {
+        frameWidth: 32,
+        frameHeight: 32
+    });
+}
 
 function create() {
-    scoreText = this.add.text(20, 420, 'Score: 0', { fontSize: '24px', fill: '#fff' });
-    
+    // Add Score Text
+    scoreText = this.add.text(20, 430, 'SCORE: 0', { 
+        fontSize: '28px', 
+        fill: '#ffffff', 
+        fontStyle: 'bold',
+        fontFamily: 'Arial'
+    });
+
+    // Initialize Grid
     for (let y = 0; y < GRID_SIZE; y++) {
         grid[y] = [];
         for (let x = 0; x < GRID_SIZE; x++) {
@@ -31,12 +45,15 @@ function create() {
 }
 
 function spawnTile(x, y, scene) {
-    let color = Phaser.Utils.Array.GetRandom(COLORS);
-    let tile = scene.add.rectangle(x * TILE_SIZE + 25, y * TILE_SIZE + 25, 42, 42, color);
+    let frame = Phaser.Utils.Array.GetRandom(CANDY_FRAMES);
+    let tile = scene.add.sprite(x * TILE_SIZE + 25, y * TILE_SIZE + 25, 'candies', frame);
+    
+    tile.setScale(1.4); // Make them bigger and easier to click
     tile.setInteractive();
-    tile.setData('color', color);
+    tile.setData('color', frame);
     tile.setData('gridX', x);
     tile.setData('gridY', y);
+    
     tile.on('pointerdown', () => handleSelect(tile, scene));
     grid[y][x] = tile;
     return tile;
@@ -47,29 +64,36 @@ async function handleSelect(tile, scene) {
 
     if (!selectedTile) {
         selectedTile = tile;
-        tile.setStrokeStyle(3, 0xffffff);
+        tile.setAlpha(0.6); // Visual feedback for selection
+        tile.setScale(1.6);
     } else {
         let x1 = selectedTile.getData('gridX'), y1 = selectedTile.getData('gridY');
         let x2 = tile.getData('gridX'), y2 = tile.getData('gridY');
 
+        // Check if neighbor
         if (Math.abs(x1 - x2) + Math.abs(y1 - y2) === 1) {
             isProcessing = true;
-            selectedTile.setStrokeStyle(0);
+            selectedTile.setAlpha(1);
+            selectedTile.setScale(1.4);
             
             await swapTiles(selectedTile, tile, scene);
             
             if (checkMatches(scene)) {
                 await processMatches(scene);
             } else {
-                await swapTiles(selectedTile, tile, scene); // Swap back if no match
+                // If no match, swap them back
+                await swapTiles(selectedTile, tile, scene);
             }
             
             selectedTile = null;
             isProcessing = false;
         } else {
-            selectedTile.setStrokeStyle(0);
+            // Deselect and select new one
+            selectedTile.setAlpha(1);
+            selectedTile.setScale(1.4);
             selectedTile = tile;
-            tile.setStrokeStyle(3, 0xffffff);
+            tile.setAlpha(0.6);
+            tile.setScale(1.6);
         }
     }
 }
@@ -89,7 +113,8 @@ function swapTiles(tile1, tile2, scene) {
             targets: [tile1, tile2],
             x: (target) => target.getData('gridX') * TILE_SIZE + 25,
             y: (target) => target.getData('gridY') * TILE_SIZE + 25,
-            duration: 200,
+            duration: 250,
+            ease: 'Back.easeOut',
             onComplete: resolve
         });
     });
@@ -97,7 +122,8 @@ function swapTiles(tile1, tile2, scene) {
 
 function checkMatches(scene) {
     let toDestroy = new Set();
-    // Horizontal
+    
+    // Check Horizontal
     for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE - 2; x++) {
             if (!grid[y][x] || !grid[y][x+1] || !grid[y][x+2]) continue;
@@ -107,7 +133,8 @@ function checkMatches(scene) {
             }
         }
     }
-    // Vertical
+    
+    // Check Vertical
     for (let x = 0; x < GRID_SIZE; x++) {
         for (let y = 0; y < GRID_SIZE - 2; y++) {
             if (!grid[y][x] || !grid[y+1][x] || !grid[y+2][x]) continue;
@@ -120,10 +147,16 @@ function checkMatches(scene) {
 
     if (toDestroy.size > 0) {
         score += toDestroy.size * 10;
-        scoreText.setText('Score: ' + score);
+        scoreText.setText('SCORE: ' + score);
         toDestroy.forEach(t => {
             grid[t.getData('gridY')][t.getData('gridX')] = null;
-            t.destroy();
+            // Pop animation before destroying
+            scene.tweens.add({
+                targets: t,
+                scale: 0,
+                duration: 200,
+                onComplete: () => t.destroy()
+            });
         });
         return true;
     }
@@ -131,7 +164,9 @@ function checkMatches(scene) {
 }
 
 async function processMatches(scene) {
-    // 1. Gravity: Move existing tiles down
+    await new Promise(r => setTimeout(r, 250));
+
+    // Gravity: Move tiles down
     for (let x = 0; x < GRID_SIZE; x++) {
         for (let y = GRID_SIZE - 1; y >= 0; y--) {
             if (grid[y][x] === null) {
@@ -143,7 +178,8 @@ async function processMatches(scene) {
                         scene.tweens.add({
                             targets: grid[y][x],
                             y: y * TILE_SIZE + 25,
-                            duration: 200
+                            duration: 300,
+                            ease: 'Bounce.easeOut'
                         });
                         break;
                     }
@@ -152,23 +188,24 @@ async function processMatches(scene) {
         }
     }
 
-    // 2. Refill: Spawn new tiles at the top
+    // Refill: Spawn new tiles
     for (let x = 0; x < GRID_SIZE; x++) {
         for (let y = 0; y < GRID_SIZE; y++) {
             if (grid[y][x] === null) {
                 let tile = spawnTile(x, y, scene);
-                tile.y = -50; // Start off-screen
+                tile.y = -50;
                 scene.tweens.add({
                     targets: tile,
                     y: y * TILE_SIZE + 25,
-                    duration: 300
+                    duration: 400,
+                    ease: 'Bounce.easeOut'
                 });
             }
         }
     }
 
-    // 3. Recursive check for new matches (Combos)
-    await new Promise(r => setTimeout(r, 400));
+    // Recursive check for combos
+    await new Promise(r => setTimeout(r, 500));
     if (checkMatches(scene)) {
         await processMatches(scene);
     }
